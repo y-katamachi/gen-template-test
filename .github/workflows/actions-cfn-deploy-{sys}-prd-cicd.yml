@@ -1,0 +1,53 @@
+name: Deploy-CFn-Stack-sys-prd-cicd
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-cfn:
+    runs-on: ubuntu-larger-runner-latest
+    env : 
+      allow_users: ${{ secrets.ALLOWED_USERS }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        if: ${{ contains(env.allow_users, github.actor) }} 
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          aws-region: ap-northeast-1
+          role-to-assume: arn:aws:iam::584729548090:role/gen-prd-role-s-github-actions-oidc
+      - run: aws sts get-caller-identity
+
+      - name: Configure AWS Credentials2
+        if: ${{ contains(env.allow_users, github.actor) }} 
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          aws-region: ap-northeast-1
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ env.AWS_SESSION_TOKEN }}
+          role-external-id: ${{ secrets.EXTERNAL_ID_PRD }}
+          role-to-assume: arn:aws:iam::{aws-account-id}:role/sys-prd-role-s-github-actions-deploy
+          role-duration-seconds: 900
+      - run: aws sts get-caller-identity
+
+      - name: deploy CloudFormation stack
+        if: ${{ contains(env.allow_users, github.actor) }} 
+        env:
+          STACK_NAME: Stack-cfn-sys-prd-cicd
+          TEMPLATE_FILE: ./cloudformation/stacks/template-sys-cicd-init.yml
+        run: |
+          aws cloudformation deploy \
+          --stack-name ${STACK_NAME} \
+          --template-file ${TEMPLATE_FILE} \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --parameter-overrides SystemName=sys Env=prd Role=cicd
+
+      - name: echo commit-sha-1
+        run: |
+          echo ${{ github.sha }}

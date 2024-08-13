@@ -1,0 +1,17 @@
+###### Requirements without Version Specifiers ######
+aws_lambda_context
+pytest
+pytest-mock
+pytest-cov
+redis
+git-remote-codecommit
+flake8
+bandit
+sphinx
+sphinx_rtd_theme
+pep8-naming
+
+###### Requirements with Version Specifiers ######
+docutils <0.17, >=0.10
+Jinja2 <3.0, >=2.10.1
+cryptography ==41.0.3

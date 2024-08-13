@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Transform: AWS::Serverless-2016-10-31
+
+Description: cicd-sample-app
+
+Parameters: 
+  SystemName: 
+    Type: String
+    AllowedValues:
+      - pcd
+      - pcn
+      - peh
+      - pgd
+      - gen
+      - pbc
+      - pbz
+  Env:
+    Type: String
+    AllowedValues:
+      - cmn
+      - dev
+      - stg
+      - prd
+  Role:
+    Type: String
+    AllowedValues:
+      - sample
+
+Mappings: 
+  EnvMap:
+    dev:
+      VpcID: "vpc-0f13230dd2ef68484"
+      PrivateSubnetID: "subnet-0c1036074f1a459cd"
+      PrivateSubnetCIDR: "10.10.85.0/26"
+    stg:
+      VpcID: "vpc-0112fb98e597078f7"
+      PrivateSubnetID: "subnet-0daa83b592df6defd"
+      PrivateSubnetCIDR: "192.168.85.0/26"
+    prd:
+      VpcID: "vpc-0ac88e73010bbf73d"
+      PrivateSubnetID: "subnet-08524f55575fe59b7"
+      PrivateSubnetCIDR: "172.16.85.0/26"
+
+Globals:
+  Function:
+    Runtime: python3.9
+    Environment:
+      Variables:
+        REDIS_ENDPOINT:
+          Fn::ImportValue: !Sub ${SystemName}-${Env}-redis-endpoint
+    VpcConfig: 
+      SubnetIds:
+        - !FindInMap [ EnvMap, !Ref Env, PrivateSubnetID ]
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub ${SystemName}-${Env}-sg-srv-lambda-sample
+      
+Resources:
+# ----------------------------- #
+# Sample-Function               #
+# ----------------------------- #
+  SampleAppFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${SystemName}-${Env}-lambda-fn-${Role}
+      CodeUri: ./src/lambda/sample_app
+      Handler: sample_app.lambda_handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambdaVPCAccessExecutionRole
+        - AmazonElastiCacheFullAccess
+        - Version: 2012-10-17
+          Statement:
+            - Resource: "*"
+              Effect: Allow
+              Action:
+                - ec2:DeleteNetworkInterface
+                - ec2:DetachNetworkInterface
+                - lambda:InvokeFunction
+      Tags:
+        Name: !Sub ${SystemName}-${Env}-lambda-fn-${Role}
+        SystemName: !Sub ${SystemName}
+        Env: !Sub ${Env}
+        CodeUri: ./src/lambda/
+      Events:
+        AppMethod:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SampleAppAPI
+            Path: /sample_app
+            Method: GET
+
+# ----------------------------- #
+# API Gateway                   #
+# ----------------------------- #
+  SampleAppAPI:
+    Type: AWS::Serverless::Api
+    DependsOn:
+      - ApiGatewayLoggingRole
+    Properties:
+      Name: !Sub ${SystemName}-${Env}-api-${Role}
+      StageName: !Sub ${Env}
+      DefinitionBody:
+        swagger: "2.0"
+        info:
+          version: 0.1.0
+          title: sample_api
+        paths:
+          /sample_app:
+            get:
+              summary: "Redisに接続して1つのKeyに値をセットする"
+              responses:
+                "200": 
+                  description: 'successfull operation'
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                passthroughBehavior: when_no_templates
+                uri: !Sub arn:aws:apigateway:ap-northeast-1:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-northeast-1:${AWS::AccountId}:function:${SystemName}-${Env}-lambda-fn-sample/invocations
+      TracingEnabled: TRUE
+      EndpointConfiguration:
+        Type: REGIONAL
+      MethodSettings:
+        - LoggingLevel: ERROR
+          ResourcePath: '/*'
+          HttpMethod: '*'
+      Tags:
+        SystemName: !Ref SystemName
+
+# ----------------------------- #
+# API Gateway Account           #
+# ----------------------------- #
+  ApiGwAccountConfig:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayLoggingRole.Arn
+
+# ----------------------------- #
+# Role                          #
+# ----------------------------- #
+  ApiGatewayLoggingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: 'Allow'
+                Action: 
+                  - 'Lambda:*'
+                Resource: '*'
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs

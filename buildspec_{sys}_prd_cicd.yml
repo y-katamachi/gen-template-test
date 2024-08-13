@@ -1,0 +1,41 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+
+  pre_build:
+    commands:
+      - echo "Set Env"
+      - export ACCOUNT_ID={aws-account-id}
+      - export SYSTEM_NAME={sys}
+      - export ENV=prd
+      - export CODEBUILD_HOME=$(pwd)
+      - echo "Install Modules"
+      - pip install -r requirements.txt -q
+      - echo "Update AWS-SAM-CLI"
+      - pip install --upgrade aws-sam-cli -q
+      - pip list
+      - sam --version
+      # - echo "Style Guide Enforcement"
+      # - flake8 ./src
+      # - echo "Vulnerability Assessment"
+      # - bandit -r ./src
+      # - echo "Documentation Generator"
+      # - sphinx-apidoc -f -o ./src/lambda/docs ./src/lambda
+      # - sphinx-build -b html ./src/lambda/docs ./src/lambda/docs/_build
+      # - echo "Unit Test"
+      # - cd ./tests/lambda/unit
+      # - pytest -v --cov --cov-branch --cov-report=html test_sampleapp.py
+      # - cd ${CODEBUILD_HOME}
+      # - echo "Upload output files"
+      # - aws s3 sync ./src/lambda/docs s3://${SYSTEM_NAME}-${ENV}-s3-output-${ACCOUNT_ID}/src/lambda/docs --no-progress --delete
+      # - aws s3 sync ./tests/lambda/unit/htmlcov/ s3://${SYSTEM_NAME}-${ENV}-s3-output-${ACCOUNT_ID}/tests/lambda/unit/htmlcov/ --no-progress --delete
+
+  build:
+    commands:
+      - echo "SAM Build and Deploy"
+      - export Env=prd
+      - sam build --config-env ${Env} --template-file template_{sys}_cicd.yml --config-file samconfig_{sys}_cicd.toml --parameter-overrides	SystemName={sys} Env=prd Role=sample
+      - sam deploy --config-env ${Env} --template-file template_{sys}_cicd.yml --config-file samconfig_{sys}_cicd.toml --parameter-overrides SystemName={sys} Env=prd Role=sample

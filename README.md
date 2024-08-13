@@ -1,0 +1,2 @@
+# gen-template
+CI/CDのテンプレートリポジトリ

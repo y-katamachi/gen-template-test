@@ -1,0 +1,345 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: {sys}-cicd-init
+
+Parameters: 
+  SystemName: 
+    Type: String
+    AllowedValues:
+      - pcd
+      - pcn
+      - peh
+      - pgd
+      - gen
+      - pbc
+      - pbz
+  Env:
+    Type: String
+    AllowedValues:
+      - dev
+      - stg
+      - prd
+  Role:
+    Type: String
+    AllowedValues:
+      - cicd
+  ECacheNodeType:
+    Type: String
+    Default: cache.t4g.micro
+
+Mappings: 
+  EnvMap:
+    dev:
+      VpcID: "vpc-0f13230dd2ef68484"
+      SubnetID01d: "subnet-0c1036074f1a459cd"
+      SubnetCIDR01d: "10.10.85.0/26"
+    stg:
+      VpcID: "vpc-0112fb98e597078f7"
+      SubnetID01d: "subnet-0daa83b592df6defd"
+      SubnetCIDR01d: "192.168.85.0/26"
+    prd:
+      VpcID: "vpc-0ac88e73010bbf73d"
+      SubnetID01d: "subnet-08524f55575fe59b7"
+      SubnetCIDR01d: "172.16.85.0/26"
+
+Resources:
+# -----------------------------------------------
+# Security Group
+# -----------------------------------------------
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: The SecurityGroup for redis
+      GroupName: !Sub ${SystemName}-${Env}-sg-srv-redis-${Role}
+      VpcId: !FindInMap [ EnvMap, !Ref Env, VpcID ]
+      SecurityGroupIngress: 
+         - IpProtocol: tcp  
+           FromPort: 6379
+           ToPort: 6379
+           CidrIp: !FindInMap [ EnvMap, !Ref Env, SubnetCIDR01d ]
+      Tags: 
+        - Key: Name
+          Value: !Sub ${SystemName}-${Env}-sg-srv-redis-${Role}
+        - Key: Env
+          Value: !Sub ${Env}
+        - Key: SystemName
+          Value: !Sub ${SystemName}
+
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: The Security group for Endpoint
+      GroupName: !Sub ${SystemName}-${Env}-sg-srv-vpce-logs
+      VpcId: !FindInMap [ EnvMap, !Ref Env, VpcID ]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !FindInMap [ EnvMap, !Ref Env, SubnetCIDR01d ]
+      Tags: 
+        - Key: Name
+          Value: !Sub ${SystemName}-${Env}-sg-srv-vpce-logs
+        - Key: Env
+          Value: !Sub ${Env}
+        - Key: SystemName
+          Value: !Sub ${SystemName}
+
+  CodeBuildSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: The Security group for codebuild
+      GroupName: !Sub ${SystemName}-${Env}-sg-srv-codebuild-${Role}
+      VpcId: !FindInMap [ EnvMap, !Ref Env, VpcID ]
+      SecurityGroupEgress: 
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref RedisSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref EndpointSecurityGroup   
+      Tags: 
+        - Key: Name
+          Value: !Sub ${SystemName}-${Env}-sg-srv-codebuild-${Role}
+        - Key: Env
+          Value: !Sub ${Env}
+        - Key: SystemName
+          Value: !Sub ${SystemName}
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: The Security group for lambda
+      GroupName: !Sub ${SystemName}-${Env}-sg-srv-lambda-${Role}
+      VpcId: !FindInMap [ EnvMap, !Ref Env, VpcID ]
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref RedisSecurityGroup
+      Tags: 
+        - Key: Name
+          Value: !Sub ${SystemName}-${Env}-sg-srv-lambda-${Role}
+        - Key: Env
+          Value: !Sub ${Env}
+        - Key: SystemName
+          Value: !Sub ${SystemName}
+
+# -----------------------------------------------
+# Subnet Group
+# -----------------------------------------------
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties: 
+        CacheSubnetGroupName: !Sub ${SystemName}-${Env}-subnetgroup-${Role}
+        Description: ElastiCache-Subnet-Group
+        SubnetIds: 
+          - !FindInMap [ EnvMap, !Ref Env, SubnetID01d ]
+        Tags: 
+        - Key: Name
+          Value: !Sub ${SystemName}-${Env}-subnetgroup-${Role}
+        - Key: Env
+          Value: !Sub ${Env}
+        - Key: SystemName
+          Value: !Sub ${SystemName}
+
+# -----------------------------------------------
+# Redis
+# -----------------------------------------------
+  ECacheRedis: 
+    Type: AWS::ElastiCache::CacheCluster
+    Properties: 
+      AutoMinorVersionUpgrade: false
+      CacheNodeType: !Ref ECacheNodeType
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      ClusterName: !Sub ${SystemName}-${Env}-redis-${Role}
+      Engine: redis
+      EngineVersion: 6.2
+      NumCacheNodes: 1
+      PreferredAvailabilityZone: ap-northeast-1d
+      # TransitEncryptionEnabled: TRUE
+      Tags: 
+        - Key: Name
+          Value: !Sub ${SystemName}-${Env}-redis-${Role}
+        - Key: Env
+          Value: !Sub ${Env}
+        - Key: SystemName
+          Value: !Sub ${SystemName}
+      VpcSecurityGroupIds: 
+        - !Ref RedisSecurityGroup
+
+# -----------------------------------------------
+# S3 Bucket
+# -----------------------------------------------
+  SAMtmpBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${SystemName}-${Env}-s3-samtmp-${AWS::AccountId}
+      OwnershipControls: 
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: TRUE
+        BlockPublicPolicy: TRUE
+        IgnorePublicAcls: TRUE
+        RestrictPublicBuckets: TRUE
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'AES256'
+      VersioningConfiguration:
+        Status: Enabled 
+      LifecycleConfiguration:
+        Rules:
+          - Id: ${SystemName}-${Env}-s3-github-${Role}-${AWS::AccountId}-Lifecycle
+            Status: 'Enabled'
+            NoncurrentVersionExpiration:
+              NewerNoncurrentVersions: 3
+              NoncurrentDays: 1
+      Tags:
+        - Key: Name
+          Value: !Sub ${SystemName}-${Env}-s3-samtmp-${AWS::AccountId}
+        - Key: Env
+          Value: !Sub ${Env}
+        - Key: SystemName
+          Value: !Sub ${SystemName}
+
+  OutputBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${SystemName}-${Env}-s3-output-${AWS::AccountId}
+      OwnershipControls: 
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: TRUE
+        BlockPublicPolicy: TRUE
+        IgnorePublicAcls: TRUE
+        RestrictPublicBuckets: TRUE
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'AES256'
+      VersioningConfiguration:
+        Status: Enabled 
+      LifecycleConfiguration:
+        Rules:
+          - Id: ${SystemName}-${Env}-s3-github-${Role}-${AWS::AccountId}-Lifecycle
+            Status: 'Enabled'
+            NoncurrentVersionExpiration:
+              NewerNoncurrentVersions: 3
+              NoncurrentDays: 1
+      Tags:
+        - Key: Name
+          Value: !Sub ${SystemName}-${Env}-s3-output-${AWS::AccountId}
+        - Key: Env
+          Value: !Sub ${Env}
+        - Key: SystemName
+          Value: !Sub ${SystemName}
+
+# -----------------------------------------------
+# Service Role
+# -----------------------------------------------
+  LambdaCodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${SystemName}-${Env}-role-codebuild-${Role}
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Resource: "*"
+                Effect: Allow
+                Action:
+                  - codeartifact:GetRepositoryEndpoint
+                  - codeartifact:ReadFromRepository
+                  - codeartifact:GetAuthorizationToken
+                  - logs:*
+                  - lambda:*
+                  - cloudformation:*
+                  - S3:*
+                  - apigateway:*
+                  - iam:*
+                  - ec2:*
+                  - elasticache:*
+                  - dynamodb:*
+                  - codecommit:*
+                  - ssm:*
+                  - events:*
+                  - secretsmanager:*
+                  - dax:*
+                  - sqs:*
+
+# -----------------------------------------------
+# Code Build Project
+# -----------------------------------------------
+  LambdaDeployProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Description: "Run {sys}-cicd"
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Source:
+        Auth:
+          Type: OAUTH
+        Type: GITHUB
+        Location: https://github.com/DX-Platform/{repository-name}.git
+        BuildSpec: !Sub buildspec_${SystemName}_${Env}_${Role}.yml
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:2.0
+        Type: LINUX_CONTAINER
+        EnvironmentVariables:
+          - Name: Env
+            Value: !Sub ${Env}
+      Triggers: 
+        Webhook: false
+      Name: !Sub ${SystemName}-${Env}-codebuild-project-${Role}
+      ServiceRole: !Ref LambdaCodeBuildServiceRole
+      VpcConfig:
+        VpcId: !FindInMap [ EnvMap, !Ref Env, VpcID ]
+        Subnets: 
+          - !FindInMap [ EnvMap, !Ref Env, SubnetID01d ]
+        SecurityGroupIds: 
+          - !Ref CodeBuildSecurityGroup
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+      Tags:
+        - Key: Name
+          Value: !Sub ${SystemName}-${Env}-codebuild-project-${Role}
+        - Key: Env
+          Value: !Sub ${Env}
+        - Key: SystemName
+          Value: !Sub ${SystemName}
+
+# -----------------------------------------------
+# Output
+# -----------------------------------------------
+Outputs:
+  LambdaSecurityGroup:
+    Description: The SecurityGroup to use for Lambda
+    Value: 
+      Ref: LambdaSecurityGroup
+    Export: 
+      Name:
+        !Sub ${SystemName}-${Env}-sg-srv-lambda-sample
+
+  RedisEndpointpoint:
+    Value: !GetAtt ECacheRedis.RedisEndpoint.Address
+    Export:
+      Name: !Sub ${SystemName}-${Env}-redis-endpoint

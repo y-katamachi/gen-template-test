@@ -1,0 +1,54 @@
+version = 0.1
+[dev.build.parameters]
+stack_name = "Stack-sam-{sys}-dev-pipeline"
+s3_bucket = "{sys}-dev-s3-samtmp-{aws-account-id-dev}"
+s3_prefix = "{sys}-dev-cicd"
+region = "ap-northeast-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+fail_on_empty_changeset = false
+
+[dev.deploy.parameters]
+stack_name = "Stack-sam-{sys}-dev-pipeline"
+s3_bucket = "{sys}-dev-s3-samtmp-{aws-account-id-dev}"
+s3_prefix = "{sys}-dev-cicd"
+region = "ap-northeast-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+fail_on_empty_changeset = false
+
+[stg.build.parameters]
+stack_name = "Stack-sam-{sys}-stg-pipeline"
+s3_bucket = "{sys}-stg-s3-samtmp-{aws-account-id-stg}"
+s3_prefix = "{sys}-stg-cicd"
+region = "ap-northeast-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+fail_on_empty_changeset = false
+
+[stg.deploy.parameters]
+stack_name = "Stack-sam-{sys}-stg-pipeline"
+s3_bucket = "{sys}-stg-s3-samtmp-{aws-account-id-stg}"
+s3_prefix = "{sys}-stg-cicd"
+region = "ap-northeast-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+fail_on_empty_changeset = false
+
+[prd.build.parameters]
+stack_name = "Stack-sam-{sys}-prd-pipeline"
+s3_bucket = "{sys}-prd-s3-samtmp-{aws-account-id-prd}"
+s3_prefix = "{sys}-stg-cicd"
+region = "ap-northeast-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+fail_on_empty_changeset = false
+
+[prd.deploy.parameters]
+stack_name = "Stack-sam-{sys}-prd-pipeline"
+s3_bucket = "{sys}-prd-s3-samtmp-{aws-account-id-prd}"
+s3_prefix = "{sys}-stg-cicd"
+region = "ap-northeast-1"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+fail_on_empty_changeset = false
